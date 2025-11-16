@@ -1,3 +1,5 @@
-requests>=2.28.0
-python-dotenv>=1.0.0
-google-cloud-bigquery>=3.5.0
+python-dotenv
+requests
+google-cloud-bigquery
+apscheduler
+pytest

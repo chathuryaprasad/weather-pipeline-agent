@@ -1,2 +1,7 @@
 /.env
 /adup-task-3e9f1956c836.json
+/.pytest_cache/
+/.venv
+__pycache__/
+*.pyc
+instance/
