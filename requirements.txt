@@ -2,4 +2,7 @@ python-dotenv
 requests
 google-cloud-bigquery
 apscheduler
+PyMySQL
+cryptography
 pytest
+openai>=1.0.0

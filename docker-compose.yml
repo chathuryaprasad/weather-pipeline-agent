@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+  db:
+    image: mysql:8
+    container_name: adup_task_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: weather_db
+    ports:
+      - "3036:3306"  # External port 3036 maps to internal 3306
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s  # Give MySQL time to initialize
+
+  app:
+    build: .
+    container_name: adup_task_app
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      # Override a few defaults for docker compose
+      STORAGE_TYPE: mysql
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306  # Internal Docker port (not the mapped 3036)
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DB: weather_db
+      MYSQL_TABLE: weather_data
+      BACKFILL_DAYS: 60
+    ports:
+      - "8000:8000" # for future web UI if needed
+    command: ["sh", "-c", "chmod +x docker/startup.sh && docker/startup.sh"]
+    restart: unless-stopped
+
+  agent:
+    build: .
+    container_name: adup_task_agent
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    env_file: .env
+    environment:
+      STORAGE_TYPE: mysql
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306  # Internal Docker port (not the mapped 3036)
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DB: weather_db
+      MYSQL_TABLE: weather_data
+    stdin_open: true
+    tty: true
+    command: ["sh", "-c", "chmod +x docker/startup_agent.sh && docker/startup_agent.sh"]
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

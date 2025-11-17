@@ -1,7 +1,6 @@
 # scripts/orchestrator.py
 import os
 from dotenv import load_dotenv
-from ingestion.loader_bigquery import BigQueryLoader
 from ingestion.weather_client import WeatherClient
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta, timezone
@@ -12,6 +11,14 @@ import os
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
+
+STORAGE = os.getenv("STORAGE_TYPE", "bigquery").lower()
+
+# choose storage loader implementation
+if STORAGE == "mysql" or STORAGE == "mariadb":
+    from ingestion.loader_sql import MySQLLoader as StorageLoader
+else:
+    from ingestion.loader_bigquery import BigQueryLoader as StorageLoader
 
 # --- Configuration ---
 API_KEY = os.getenv("OPENWEATHER_API_KEY")
@@ -26,7 +33,7 @@ except Exception:
     ]
 
 # --- Initialize clients ---
-bq_loader = BigQueryLoader()
+bq_loader = StorageLoader()
 bq_loader.ensure_table()
 weather_client = WeatherClient(API_KEY)
 
@@ -43,8 +50,11 @@ def fetch_and_store_weather(simulated_timestamp=None):
         if simulated_timestamp:
             rec["timestamp"] = simulated_timestamp.isoformat()
 
-    # Convert to BigQuery rows and insert (idempotent via insert_ids)
-    rows = [bq_loader.row_to_bq(r) for r in normalized]
+    # Convert to loader-specific rows and insert (idempotent by design)
+    if hasattr(bq_loader, 'row_to_bq'):
+        rows = [bq_loader.row_to_bq(r) for r in normalized]
+    else:
+        rows = normalized
     bq_loader.insert_rows(rows)
 
     logging.info("Weather ingestion completed for timestamp: %s",
