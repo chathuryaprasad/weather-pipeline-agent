@@ -40,25 +40,84 @@ weather_client = WeatherClient(API_KEY)
 # --- Core function to fetch & insert weather ---
 def fetch_and_store_weather(simulated_timestamp=None):
     """
-    Fetch current weather (or simulated historical weather) and store in BigQuery.
+    Fetch current weather (or simulated historical weather) and store in database.
+    Includes job logging for monitoring.
     """
-    raw_data = weather_client.fetch_multiple_cities(CITIES)
-    normalized = [weather_client.normalize_weather(d) for d in raw_data]
+    import uuid
+    from datetime import datetime, timezone
+    
+    job_id = f"ingest_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    job_type = "backfill" if simulated_timestamp else "scheduled"
+    started_at = datetime.now(timezone.utc)
+    
+    try:
+        # Log job start
+        if hasattr(bq_loader, 'log_ingestion_job'):
+            bq_loader.log_ingestion_job(
+                job_id=job_id,
+                job_type=job_type,
+                status="running",
+                started_at=started_at,
+                cities_processed=len(CITIES)
+            )
+        
+        raw_data = weather_client.fetch_multiple_cities(CITIES)
+        normalized = [weather_client.normalize_weather(d) for d in raw_data]
 
-    # Adjust timestamp for backfill (normalizer uses ISO timestamps)
-    for rec in normalized:
-        if simulated_timestamp:
-            rec["timestamp"] = simulated_timestamp.isoformat()
+        # Adjust timestamp for backfill (normalizer uses ISO timestamps)
+        for rec in normalized:
+            if simulated_timestamp:
+                rec["timestamp"] = simulated_timestamp.isoformat()
 
-    # Convert to loader-specific rows and insert (idempotent by design)
-    if hasattr(bq_loader, 'row_to_bq'):
-        rows = [bq_loader.row_to_bq(r) for r in normalized]
-    else:
-        rows = normalized
-    bq_loader.insert_rows(rows)
+        # Convert to loader-specific rows and insert (idempotent by design)
+        if hasattr(bq_loader, 'row_to_bq'):
+            rows = [bq_loader.row_to_bq(r) for r in normalized]
+        else:
+            rows = normalized
+        
+        # Insert with job tracking
+        if hasattr(bq_loader, 'insert_rows'):
+            bq_loader.insert_rows(rows, job_id=job_id)
+        else:
+            bq_loader.insert_rows(rows)
 
-    logging.info("Weather ingestion completed for timestamp: %s",
-                 simulated_timestamp.isoformat() if simulated_timestamp else "current")
+        completed_at = datetime.now(timezone.utc)
+        records_inserted = len(rows)
+        
+        # Log job completion
+        if hasattr(bq_loader, 'log_ingestion_job'):
+            bq_loader.log_ingestion_job(
+                job_id=job_id,
+                job_type=job_type,
+                status="completed",
+                started_at=started_at,
+                completed_at=completed_at,
+                cities_processed=len(CITIES),
+                records_inserted=records_inserted,
+                records_updated=records_inserted  # ON DUPLICATE KEY UPDATE counts as updates
+            )
+
+        logging.info("Weather ingestion completed for timestamp: %s (job_id: %s)",
+                     simulated_timestamp.isoformat() if simulated_timestamp else "current", job_id)
+    
+    except Exception as e:
+        completed_at = datetime.now(timezone.utc)
+        error_msg = str(e)
+        
+        # Log job failure
+        if hasattr(bq_loader, 'log_ingestion_job'):
+            bq_loader.log_ingestion_job(
+                job_id=job_id,
+                job_type=job_type,
+                status="failed",
+                started_at=started_at,
+                completed_at=completed_at,
+                cities_processed=len(CITIES),
+                error_message=error_msg
+            )
+        
+        logging.error("Weather ingestion failed (job_id: %s): %s", job_id, error_msg)
+        raise
 
 # --- Backfill function ---
 def backfill_weather(days=60):

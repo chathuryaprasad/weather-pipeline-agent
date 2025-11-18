@@ -29,25 +29,44 @@ def init_database():
     loader = MySQLLoader()
     
     try:
-        # This will create the database and table if they don't exist
+        # This will create the database and all tables if they don't exist
         loader.ensure_table()
-        logger.info("Database and table created successfully!")
+        logger.info("Database and tables created successfully!")
         
-        # Check if table has data
+        # Check if cities table has data
         loader.connect()
         with loader.conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) as count FROM `{loader.database}`.`{loader.table}`")
-            result = cur.fetchone()
-            count = result['count'] if result else 0
+            cur.execute(f"USE `{loader.database}`")
             
-            if count == 0:
-                logger.info(f"Table '{loader.table}' exists but is empty ({count} rows).")
-                logger.info("To populate with data, run:")
-                logger.info("  python -m scripts.run_pipeline")
-                logger.info("Or:")
-                logger.info("  docker-compose exec app python -m scripts.run_pipeline")
+            # Check cities
+            cur.execute("SELECT COUNT(*) as count FROM cities")
+            cities_result = cur.fetchone()
+            cities_count = cities_result['count'] if cities_result else 0
+            
+            # Check weather observations
+            if loader.use_improved_schema:
+                cur.execute("SELECT COUNT(*) as count FROM weather_observations")
+                obs_result = cur.fetchone()
+                obs_count = obs_result['count'] if obs_result else 0
+                table_name = "weather_observations"
             else:
-                logger.info(f"Table '{loader.table}' has {count} rows of data.")
+                cur.execute(f"SELECT COUNT(*) as count FROM `{loader.table}`")
+                obs_result = cur.fetchone()
+                obs_count = obs_result['count'] if obs_result else 0
+                table_name = loader.table
+            
+            logger.info(f"Cities table: {cities_count} cities")
+            logger.info(f"Weather observations table: {obs_count} rows")
+            
+            if cities_count == 0:
+                logger.info("Cities table is empty. To populate it, run:")
+                logger.info("  python scripts/populate_cities.py")
+            
+            if obs_count == 0:
+                logger.info(f"Weather observations table is empty. To populate with data, run:")
+                logger.info("  python -m scripts.one_shot")
+                logger.info("Or:")
+                logger.info("  docker-compose exec app python -m scripts.one_shot")
                 
     except Exception as e:
         logger.error(f"Error initializing database: {e}")

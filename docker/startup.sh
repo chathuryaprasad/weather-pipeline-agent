@@ -15,6 +15,10 @@ python docker/wait_for_db.py
 echo "Initializing database..."
 python scripts/init_database.py
 
+# Populate cities table with metadata
+echo "Populating cities table..."
+python scripts/populate_cities.py
+
 # Run initial data fetch
 echo "Fetching initial weather data..."
 python -m scripts.one_shot
