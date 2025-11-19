@@ -49,9 +49,17 @@ CREATE TABLE IF NOT EXISTS `weather_observations` (
   INDEX `idx_city_name` (`city_name`),
   INDEX `idx_timestamp` (`timestamp`),
   INDEX `idx_city_timestamp` (`city_name`, `timestamp`),
+  INDEX `idx_city_condition_timestamp` (`city_name`, `condition`, `timestamp`),
   INDEX `idx_ingestion_job` (`ingestion_job_id`),
   FOREIGN KEY (`city_id`) REFERENCES `cities`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+PARTITION BY RANGE (YEAR(`timestamp`)) (
+  PARTITION `p_before_2023` VALUES LESS THAN (2023),
+  PARTITION `p2023` VALUES LESS THAN (2024),
+  PARTITION `p2024` VALUES LESS THAN (2025),
+  PARTITION `p2025` VALUES LESS THAN (2026),
+  PARTITION `p_future` VALUES LESS THAN MAXVALUE
+);
 """
 
 # Ingestion logs table schema
