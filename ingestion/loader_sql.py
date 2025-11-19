@@ -103,6 +103,11 @@ class MySQLLoader:
         wind_gust = raw_data.get("wind", {}).get("gust") if isinstance(raw_data, dict) else None
         visibility = raw_data.get("visibility") if isinstance(raw_data, dict) else None
         clouds = raw_data.get("clouds", {}).get("all") if isinstance(raw_data, dict) else None
+        uv_index = normalized.get("uv_index")
+        if uv_index is None and isinstance(raw_data, dict):
+            uv_index = raw_data.get("uvi")
+            if uv_index is None:
+                uv_index = raw_data.get("current", {}).get("uvi") if isinstance(raw_data.get("current"), dict) else None
 
         if self.use_improved_schema:
             return {
@@ -119,6 +124,7 @@ class MySQLLoader:
                 "condition_code": condition_code,
                 "visibility": visibility,
                 "cloudiness": clouds,
+                "uv_index": uv_index,
                 "raw": json.dumps(raw_data, default=str) if raw_data else "{}",
                 "source": "openweathermap",
                 "ingestion_job_id": self.current_job_id
@@ -143,34 +149,175 @@ class MySQLLoader:
         """Insert rows with improved schema support and job tracking."""
         if not rows:
             return
-        
+
         if job_id:
             self.current_job_id = job_id
-        
+        else:
+            # Generate a fresh ingestion job id for each call when not provided.
+            self.current_job_id = str(uuid.uuid4())
+
         self.connect()
         with self.conn.cursor() as cur:
             cur.execute(f"USE `{self.database}`")
-            
+
+            prepared = []
+            for r in rows:
+                if self.use_improved_schema:
+                    rr = self.row_to_sql(r)
+                else:
+                    if isinstance(r, dict) and "updated_at" in r and "timestamp" in r:
+                        rr = r.copy()
+                    else:
+                        rr = self.row_to_sql(r)
+
+                    raw = rr.get("raw")
+                    if isinstance(raw, (dict, list)):
+                        rr["raw"] = json.dumps(raw, default=str)
+                    else:
+                        rr["raw"] = str(raw or "{}")
+
+                prepared.append(rr)
+
+            if not prepared:
+                return
+
             if self.use_improved_schema:
-                insert_sql = """
-                INSERT INTO `weather_observations`
-                  (city_name, `timestamp`, temperature, feels_like, pressure, humidity, 
-                   wind_speed, wind_deg, wind_gust, `condition`, condition_code, 
-                   visibility, cloudiness, `raw`, source, ingestion_job_id)
+                stage_batch_id = f"batch_{uuid.uuid4().hex}"
+                staged_rows = []
+                for rr in prepared:
+                    staged = rr.copy()
+                    staged["ingest_batch_id"] = stage_batch_id
+                    if "uv_index" not in staged:
+                        staged["uv_index"] = None
+                    staged_rows.append(staged)
+
+                stage_insert_sql = """
+                INSERT INTO `weather_observations_stage`
+                  (ingest_batch_id, city_name, `timestamp`, temperature, feels_like, pressure,
+                   humidity, wind_speed, wind_deg, wind_gust, `condition`, condition_code,
+                   visibility, cloudiness, uv_index, `raw`, source, ingestion_job_id)
                 VALUES
-                  (%(city_name)s, %(timestamp)s, %(temperature)s, %(feels_like)s, 
-                   %(pressure)s, %(humidity)s, %(wind_speed)s, %(wind_deg)s, 
-                   %(wind_gust)s, %(condition)s, %(condition_code)s, %(visibility)s, 
-                   %(cloudiness)s, %(raw)s, %(source)s, %(ingestion_job_id)s)
+                  (%(ingest_batch_id)s, %(city_name)s, %(timestamp)s, %(temperature)s, %(feels_like)s,
+                   %(pressure)s, %(humidity)s, %(wind_speed)s, %(wind_deg)s, %(wind_gust)s, %(condition)s,
+                   %(condition_code)s, %(visibility)s, %(cloudiness)s, %(uv_index)s, %(raw)s, %(source)s,
+                   %(ingestion_job_id)s)
                 ON DUPLICATE KEY UPDATE
-                  temperature=VALUES(temperature), feels_like=VALUES(feels_like), 
-                  pressure=VALUES(pressure), humidity=VALUES(humidity),
-                  wind_speed=VALUES(wind_speed), wind_deg=VALUES(wind_deg), 
-                  wind_gust=VALUES(wind_gust), `condition`=VALUES(`condition`), 
-                  condition_code=VALUES(condition_code), visibility=VALUES(visibility),
-                  cloudiness=VALUES(cloudiness), raw=VALUES(raw), 
-                  ingestion_job_id=VALUES(ingestion_job_id), updated_at=CURRENT_TIMESTAMP
+                  temperature=VALUES(temperature),
+                  feels_like=VALUES(feels_like),
+                  pressure=VALUES(pressure),
+                  humidity=VALUES(humidity),
+                  wind_speed=VALUES(wind_speed),
+                  wind_deg=VALUES(wind_deg),
+                  wind_gust=VALUES(wind_gust),
+                  `condition`=VALUES(`condition`),
+                  condition_code=VALUES(condition_code),
+                  visibility=VALUES(visibility),
+                  cloudiness=VALUES(cloudiness),
+                  uv_index=VALUES(uv_index),
+                  raw=VALUES(raw),
+                  source=VALUES(source),
+                  ingestion_job_id=VALUES(ingestion_job_id),
+                  stage_loaded_at=CURRENT_TIMESTAMP
                 """
+
+                merge_sql = """
+                INSERT INTO `weather_observations`
+                  (city_name, `timestamp`, temperature, feels_like, pressure, humidity,
+                   wind_speed, wind_deg, wind_gust, `condition`, condition_code,
+                   visibility, cloudiness, uv_index, `raw`, source, ingestion_job_id)
+                SELECT
+                  ranked.city_name,
+                  ranked.`timestamp`,
+                  ranked.temperature,
+                  ranked.feels_like,
+                  ranked.pressure,
+                  ranked.humidity,
+                  ranked.wind_speed,
+                  ranked.wind_deg,
+                  ranked.wind_gust,
+                  ranked.`condition`,
+                  ranked.condition_code,
+                  ranked.visibility,
+                  ranked.cloudiness,
+                  ranked.uv_index,
+                  ranked.`raw`,
+                  ranked.source,
+                  ranked.ingestion_job_id
+                FROM (
+                  SELECT
+                    ws.city_name,
+                    ws.`timestamp`,
+                    ws.temperature,
+                    ws.feels_like,
+                    ws.pressure,
+                    ws.humidity,
+                    ws.wind_speed,
+                    ws.wind_deg,
+                    ws.wind_gust,
+                    ws.`condition`,
+                    ws.condition_code,
+                    ws.visibility,
+                    ws.cloudiness,
+                    ws.uv_index,
+                    ws.`raw`,
+                    ws.source,
+                    ws.ingestion_job_id,
+                    ws.stage_loaded_at,
+                    ws.id,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY ws.city_name, ws.`timestamp`
+                      ORDER BY ws.stage_loaded_at DESC, ws.id DESC
+                    ) AS rn
+                  FROM `weather_observations_stage` ws
+                  WHERE ws.ingest_batch_id = %s
+                ) AS ranked
+                WHERE ranked.rn = 1
+                ON DUPLICATE KEY UPDATE
+                  temperature=VALUES(temperature),
+                  feels_like=VALUES(feels_like),
+                  pressure=VALUES(pressure),
+                  humidity=VALUES(humidity),
+                  wind_speed=VALUES(wind_speed),
+                  wind_deg=VALUES(wind_deg),
+                  wind_gust=VALUES(wind_gust),
+                  `condition`=VALUES(`condition`),
+                  condition_code=VALUES(condition_code),
+                  visibility=VALUES(visibility),
+                  cloudiness=VALUES(cloudiness),
+                  uv_index=VALUES(uv_index),
+                  raw=VALUES(raw),
+                  source=VALUES(source),
+                  ingestion_job_id=VALUES(ingestion_job_id),
+                  updated_at=CURRENT_TIMESTAMP
+                """
+
+                cleanup_sql = """
+                DELETE FROM `weather_observations_stage`
+                WHERE ingest_batch_id = %s
+                """
+
+                prev_autocommit = bool(getattr(self.conn, "autocommit_mode", True))
+                if prev_autocommit:
+                    self.conn.autocommit(False)
+
+                try:
+                    cur.execute("START TRANSACTION")
+                    cur.executemany(stage_insert_sql, staged_rows)
+                    cur.execute(merge_sql, (stage_batch_id,))
+                    cur.execute(cleanup_sql, (stage_batch_id,))
+                    self.conn.commit()
+                    logger.info(
+                        "Upserted %d rows via staging batch %s into weather_observations",
+                        len(staged_rows),
+                        stage_batch_id,
+                    )
+                except Exception:
+                    self.conn.rollback()
+                    logger.exception("Failed to merge staging batch %s", stage_batch_id)
+                    raise
+                finally:
+                    if prev_autocommit:
+                        self.conn.autocommit(True)
             else:
                 insert_sql = f"""
                 INSERT INTO `{self.table}`
@@ -181,31 +328,8 @@ class MySQLLoader:
                   temperature=VALUES(temperature), feels_like=VALUES(feels_like), pressure=VALUES(pressure), humidity=VALUES(humidity),
                   wind_speed=VALUES(wind_speed), wind_deg=VALUES(wind_deg), `condition`=VALUES(`condition`), raw=VALUES(raw), updated_at=VALUES(updated_at)
                 """
-            
-            # Prepare rows
-            prepared = []
-            for r in rows:
-                if self.use_improved_schema:
-                    # Always convert through row_to_sql for improved schema
-                    rr = self.row_to_sql(r)
-                else:
-                    # Legacy: If this looks like an already-prepared SQL row, use as-is
-                    if isinstance(r, dict) and 'updated_at' in r and 'timestamp' in r:
-                        rr = r.copy()
-                    else:
-                        rr = self.row_to_sql(r)
-                    
-                    # Ensure raw is dumped as JSON string if dict
-                    raw = rr.get("raw")
-                    if isinstance(raw, (dict, list)):
-                        rr["raw"] = json.dumps(raw, default=str)
-                    else:
-                        rr["raw"] = str(raw or "{}")
-
-                prepared.append(rr)
-
-            cur.executemany(insert_sql, prepared)
-        logger.info("Inserted/updated %d rows into %s.%s", len(rows), self.database, self.table)
+                cur.executemany(insert_sql, prepared)
+                logger.info("Inserted/updated %d legacy rows into %s.%s", len(rows), self.database, self.table)
 
     def get_latest_weather(self, city: str) -> Dict:
         """Get latest weather observation for a city."""

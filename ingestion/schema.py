@@ -62,6 +62,42 @@ PARTITION BY RANGE (YEAR(`timestamp`)) (
 );
 """
 
+WEATHER_OBSERVATIONS_STAGE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS `weather_observations_stage` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `ingest_batch_id` VARCHAR(64) NOT NULL,
+  `city_id` INT,
+  `city_name` VARCHAR(255) NOT NULL,
+  `timestamp` DATETIME NOT NULL,
+  `temperature` DECIMAL(5, 2),
+  `feels_like` DECIMAL(5, 2),
+  `pressure` INT,
+  `humidity` TINYINT UNSIGNED,
+  `wind_speed` DECIMAL(5, 2),
+  `wind_deg` SMALLINT,
+  `wind_gust` DECIMAL(5, 2),
+  `condition` VARCHAR(255),
+  `condition_code` VARCHAR(50),
+  `visibility` INT,
+  `cloudiness` TINYINT UNSIGNED,
+  `uv_index` DECIMAL(4, 2),
+  `raw` JSON,
+  `source` VARCHAR(50) DEFAULT 'openweathermap',
+  `ingestion_job_id` VARCHAR(100),
+  `stage_loaded_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_stage_batch_city_timestamp` (`ingest_batch_id`, `city_name`, `timestamp`),
+  INDEX `idx_stage_city_timestamp` (`city_name`, `timestamp`),
+  INDEX `idx_stage_batch` (`ingest_batch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+PARTITION BY RANGE (YEAR(`timestamp`)) (
+  PARTITION `p_stage_before_2023` VALUES LESS THAN (2023),
+  PARTITION `p_stage_2023` VALUES LESS THAN (2024),
+  PARTITION `p_stage_2024` VALUES LESS THAN (2025),
+  PARTITION `p_stage_2025` VALUES LESS THAN (2026),
+  PARTITION `p_stage_future` VALUES LESS THAN MAXVALUE
+);
+"""
+
 # Ingestion logs table schema
 INGESTION_LOGS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `ingestion_logs` (
@@ -91,6 +127,7 @@ def get_all_schema_sql() -> List[str]:
     return [
         CITIES_TABLE_SQL,
         WEATHER_OBSERVATIONS_TABLE_SQL,
+        WEATHER_OBSERVATIONS_STAGE_TABLE_SQL,
         INGESTION_LOGS_TABLE_SQL
     ]
 
