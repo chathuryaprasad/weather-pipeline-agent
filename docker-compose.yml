@@ -34,9 +34,30 @@ services:
       MYSQL_DB: weather_db
       MYSQL_TABLE: weather_data
       BACKFILL_DAYS: 60
-    ports:
-      - "8000:8000" # for future web UI if needed
     command: ["sh", "-c", "chmod +x docker/startup.sh && docker/startup.sh"]
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: adup_task_api
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    env_file: .env
+    environment:
+      STORAGE_TYPE: mysql
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DB: weather_db
+      MYSQL_TABLE: weather_data
+      API_AUTH_TOKEN: super-secret-token
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "chmod +x docker/startup_api.sh && docker/startup_api.sh"]
     restart: unless-stopped
 
   agent:

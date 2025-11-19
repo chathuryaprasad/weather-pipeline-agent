@@ -10,6 +10,7 @@ load_dotenv(env_path)
 class Settings:
     OPENWEATHER_API_KEY: str = os.getenv("OPENWEATHER_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    API_AUTH_TOKEN: str = os.getenv("API_AUTH_TOKEN", "")
     GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "")
     BIGQUERY_DATASET: str = os.getenv("BIGQUERY_DATASET", "weather_dataset")
     BIGQUERY_TABLE: str = os.getenv("BIGQUERY_TABLE", "weather_data")
