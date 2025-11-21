@@ -4,10 +4,10 @@ services:
     image: mysql:8
     container_name: adup_task_mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: weather_db
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
     ports:
-      - "3036:3306"  # External port 3036 maps to internal 3306
+      - "${MYSQL_CONTAINER_PORT}:${MYSQL_PORT}"  # External port 3036 maps to internal 3306
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -26,14 +26,14 @@ services:
     env_file: .env
     environment:
       # Override a few defaults for docker compose
-      STORAGE_TYPE: mysql
-      MYSQL_HOST: db
-      MYSQL_PORT: 3306  # Internal Docker port (not the mapped 3036)
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
-      MYSQL_DB: weather_db
-      MYSQL_TABLE: weather_data
-      BACKFILL_DAYS: 60
+      STORAGE_TYPE: ${STORAGE_TYPE}
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+      MYSQL_TABLE: ${MYSQL_TABLE}
+      BACKFILL_DAYS: ${BACKFILL_DAYS}
     command: ["sh", "-c", "chmod +x docker/startup.sh && docker/startup.sh"]
     restart: unless-stopped
 
@@ -47,14 +47,14 @@ services:
         condition: service_started
     env_file: .env
     environment:
-      STORAGE_TYPE: mysql
-      MYSQL_HOST: db
-      MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
-      MYSQL_DB: weather_db
-      MYSQL_TABLE: weather_data
-      API_AUTH_TOKEN: super-secret-token
+      STORAGE_TYPE: ${STORAGE_TYPE}
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+      MYSQL_TABLE: ${MYSQL_TABLE}
+      API_AUTH_TOKEN: ${API_AUTH_TOKEN}
     ports:
       - "8000:8000"
     command: ["sh", "-c", "chmod +x docker/startup_api.sh && docker/startup_api.sh"]
@@ -70,13 +70,13 @@ services:
         condition: service_started
     env_file: .env
     environment:
-      STORAGE_TYPE: mysql
-      MYSQL_HOST: db
-      MYSQL_PORT: 3306  # Internal Docker port (not the mapped 3036)
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
-      MYSQL_DB: weather_db
-      MYSQL_TABLE: weather_data
+      STORAGE_TYPE: ${STORAGE_TYPE}
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+      MYSQL_TABLE: ${MYSQL_TABLE}
     stdin_open: true
     tty: true
     command: ["sh", "-c", "chmod +x docker/startup_agent.sh && docker/startup_agent.sh"]

@@ -5,10 +5,10 @@ services:
     image: mysql:8
     container_name: adup_task_mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: weather_db
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DB}
     ports:
-      - "3036:3306"
+      - "${MYSQL_CONTAINER_PORT}:${MYSQL_PORT}"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
@@ -25,13 +25,13 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      STORAGE_TYPE: mysql
-      MYSQL_HOST: db
-      MYSQL_PORT: 3036
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
-      MYSQL_DB: weather_db
-      MYSQL_TABLE: weather_data
+      STORAGE_TYPE: ${STORAGE_TYPE}
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+      MYSQL_TABLE: ${MYSQL_TABLE}
     stdin_open: true
     tty: true
     command: ["sh", "-c", "chmod +x docker/startup_agent.sh && docker/startup_agent.sh"]
