@@ -50,16 +50,10 @@ CREATE TABLE IF NOT EXISTS `weather_observations` (
   INDEX `idx_timestamp` (`timestamp`),
   INDEX `idx_city_timestamp` (`city_name`, `timestamp`),
   INDEX `idx_city_condition_timestamp` (`city_name`, `condition`, `timestamp`),
-  INDEX `idx_ingestion_job` (`ingestion_job_id`),
-  FOREIGN KEY (`city_id`) REFERENCES `cities`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-PARTITION BY RANGE (YEAR(`timestamp`)) (
-  PARTITION `p_before_2023` VALUES LESS THAN (2023),
-  PARTITION `p2023` VALUES LESS THAN (2024),
-  PARTITION `p2024` VALUES LESS THAN (2025),
-  PARTITION `p2025` VALUES LESS THAN (2026),
-  PARTITION `p_future` VALUES LESS THAN MAXVALUE
-);
+  INDEX `idx_ingestion_job` (`ingestion_job_id`)
+  -- Note: Partitioning removed because MySQL requires PRIMARY KEY to include partitioning column
+  -- The table uses indexes on timestamp for query performance instead
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 WEATHER_OBSERVATIONS_STAGE_TABLE_SQL = """
@@ -88,14 +82,8 @@ CREATE TABLE IF NOT EXISTS `weather_observations_stage` (
   UNIQUE KEY `uniq_stage_batch_city_timestamp` (`ingest_batch_id`, `city_name`, `timestamp`),
   INDEX `idx_stage_city_timestamp` (`city_name`, `timestamp`),
   INDEX `idx_stage_batch` (`ingest_batch_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-PARTITION BY RANGE (YEAR(`timestamp`)) (
-  PARTITION `p_stage_before_2023` VALUES LESS THAN (2023),
-  PARTITION `p_stage_2023` VALUES LESS THAN (2024),
-  PARTITION `p_stage_2024` VALUES LESS THAN (2025),
-  PARTITION `p_stage_2025` VALUES LESS THAN (2026),
-  PARTITION `p_stage_future` VALUES LESS THAN MAXVALUE
-);
+  -- Note: Partitioning removed for consistency with main table
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
 # Ingestion logs table schema
