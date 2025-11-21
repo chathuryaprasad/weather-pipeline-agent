@@ -13,6 +13,7 @@
 ```bash
 OPENWEATHER_API_KEY=your_openweathermap_key_here
 OPENAI_API_KEY=your_openai_key_here
+API_AUTH_TOKEN=super-secret-token
 STORAGE_TYPE=mysql
 MYSQL_HOST=db
 MYSQL_PORT=3036
@@ -45,6 +46,37 @@ docker-compose exec agent python -m scripts.run_agent "What is the weather in Co
 - **MySQL Database**: Port 3036
 - **Orchestrator Service**: Fetches data, backfills, runs hourly updates
 - **AI Agent Service**: Interactive weather assistant
+- **FastAPI Service**: REST API with `/api/*` endpoints (port 8000, token protected)
+
+## Call the REST API
+
+### Health check
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+     "$API_URL/health"
+```   
+
+### Latest weather 
+```bash 
+curl -H "Authorization: Bearer $API_AUTH_TOKEN" \
+     "http://localhost:8000/api/weather/latest?city=Colombo"
+```
+
+### Weather history
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+     "$API_URL/api/weather/history?city=Galle&days=14"
+```
+
+### Agent query
+
+```bash
+curl -H "Authorization: Bearer $API_AUTH_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "What was the average temperature in Galle last week?"}' \
+     http://localhost:8000/api/agent/query
+
+```
 
 ## Verify Installation
 
@@ -64,5 +96,3 @@ docker-compose exec agent python -m scripts.run_agent "What is the current weath
 ```bash
 docker-compose down
 ```
-
-
